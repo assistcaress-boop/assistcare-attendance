@@ -5,12 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>アシストケア 出退室管理</title>
-
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-
   <style>
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       padding: 25px 16px;
@@ -18,19 +15,9 @@
       background: #f1f5f2;
       color: #26342b;
     }
-
-    .container {
-      max-width: 440px;
-      margin: 30px auto;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 25px;
-    }
-
+    .container { max-width: 440px; margin: 30px auto; }
+    .header { text-align: center; margin-bottom: 25px; }
     .header h1 { font-size: 25px; }
-
     .card {
       background: white;
       border-radius: 18px;
@@ -38,15 +25,12 @@
       box-shadow: 0 4px 18px #0000000c;
       text-align: center;
     }
-
     .icon { font-size: 48px; }
-
     .description {
       font-size: 14px;
       color: #718078;
       line-height: 1.7;
     }
-
     button {
       width: 100%;
       padding: 18px;
@@ -58,7 +42,7 @@
       font-size: 17px;
       font-weight: bold;
     }
-
+    button:disabled { opacity: .5; }
     .status {
       margin-top: 20px;
       padding: 15px;
@@ -69,7 +53,6 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
-
     .footer {
       text-align: center;
       color: #8a958e;
@@ -78,10 +61,8 @@
     }
   </style>
 </head>
-
 <body>
   <div class="container">
-
     <div class="header">
       <h1>アシストケア</h1>
       <p>職員出退室管理システム</p>
@@ -91,12 +72,11 @@
       <div class="icon">📍</div>
       <h2>出退室管理</h2>
 
-      <p class="description">
-        QRコードを読み取って<br>
-        入室・退室の記録を行います。
+      <p class="description" id="description">
+        LINEを確認しています。
       </p>
 
-      <button disabled>
+      <button id="scanButton" type="button" disabled onclick="scanQR()">
         QRコードを読み取る
       </button>
 
@@ -108,54 +88,74 @@
     <div class="footer">
       株式会社アシストケア
     </div>
-
   </div>
 
-  <script>
-    const LIFF_ID = '2012373373-XMS76enQ';
+<script>
+const LIFF_ID = '2012373373-XMS76enQ';
 
-    async function initialize() {
-      const status = document.getElementById('status');
+async function initialize() {
+  const status = document.getElementById('status');
+  const button = document.getElementById('scanButton');
 
-      try {
-        if (typeof liff === 'undefined') {
-          throw new Error('LINE SDKの読み込みに失敗しました。');
-        }
+  try {
+    await liff.init({ liffId: LIFF_ID });
 
-        status.textContent = 'LINEに接続しています...';
-
-        await liff.init({
-          liffId: LIFF_ID
-        });
-
-        if (!liff.isInClient()) {
-          status.textContent =
-            'LINEアプリ内から開いてください。';
-          return;
-        }
-
-        try {
-          const profile = await liff.getProfile();
-
-          status.textContent =
-            'LINE接続成功！\n' +
-            'ログイン中：' + profile.displayName +
-            '\n本人確認の準備ができました。';
-
-        } catch (profileError) {
-          status.textContent =
-            'LINE初期化成功！\n' +
-            'プロフィール権限を確認してください。\n' +
-            profileError.message;
-        }
-
-      } catch (error) {
-        status.textContent =
-          'LINE接続エラー：\n' + error.message;
-      }
+    if (!liff.isInClient()) {
+      status.textContent = 'LINEアプリ内から開いてください。';
+      return;
     }
 
-    initialize();
-  </script>
+    const profile = await liff.getProfile();
+
+    document.getElementById('description').textContent =
+      'ログイン中：' + profile.displayName;
+
+    status.textContent =
+      'LINE接続成功！\nQRコードを読み取る準備ができました。';
+
+    button.disabled = false;
+
+  } catch (error) {
+    status.textContent =
+      'LINE接続エラー：' + error.message;
+  }
+}
+
+async function scanQR() {
+  const status = document.getElementById('status');
+  const button = document.getElementById('scanButton');
+
+  try {
+    button.disabled = true;
+    status.textContent = 'QRコード読み取りを起動しています...';
+
+    if (typeof liff.scanCodeV2 !== 'function') {
+      throw new Error(
+        'QR読み取り機能が利用できません。LINE DevelopersのScan QR設定を確認してください。'
+      );
+    }
+
+    const result = await liff.scanCodeV2();
+    const qrCode = result.value.trim();
+
+    if (!qrCode) {
+      throw new Error('QRコードを読み取れませんでした。');
+    }
+
+    status.textContent =
+      'QRコード読み取り成功！\n\n' +
+      '読み取った内容：\n' + qrCode +
+      '\n\n次は出退室記録を接続します。';
+
+  } catch (error) {
+    status.textContent =
+      '読み取りエラー：' + error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+initialize();
+</script>
 </body>
 </html>
