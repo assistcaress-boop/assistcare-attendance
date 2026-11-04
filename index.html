@@ -1,0 +1,161 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>アシストケア 出退室管理</title>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 25px 16px;
+      font-family: sans-serif;
+      background: #f1f5f2;
+      color: #26342b;
+    }
+
+    .container {
+      max-width: 440px;
+      margin: 30px auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .header h1 { font-size: 25px; }
+
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 25px 20px;
+      box-shadow: 0 4px 18px #0000000c;
+      text-align: center;
+    }
+
+    .icon { font-size: 48px; }
+
+    .description {
+      font-size: 14px;
+      color: #718078;
+      line-height: 1.7;
+    }
+
+    button {
+      width: 100%;
+      padding: 18px;
+      margin-top: 25px;
+      border: none;
+      border-radius: 12px;
+      background: #06c755;
+      color: white;
+      font-size: 17px;
+      font-weight: bold;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 12px;
+      background: #f1f5f2;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .footer {
+      text-align: center;
+      color: #8a958e;
+      font-size: 12px;
+      margin-top: 22px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="header">
+      <h1>アシストケア</h1>
+      <p>職員出退室管理システム</p>
+    </div>
+
+    <div class="card">
+      <div class="icon">📍</div>
+      <h2>出退室管理</h2>
+
+      <p class="description">
+        QRコードを読み取って<br>
+        入室・退室の記録を行います。
+      </p>
+
+      <button disabled>
+        QRコードを読み取る
+      </button>
+
+      <div class="status" id="status">
+        LINE接続を確認しています...
+      </div>
+    </div>
+
+    <div class="footer">
+      株式会社アシストケア
+    </div>
+
+  </div>
+
+  <script>
+    const LIFF_ID = '2012373373-XMS76enQ';
+
+    async function initialize() {
+      const status = document.getElementById('status');
+
+      try {
+        if (typeof liff === 'undefined') {
+          throw new Error('LINE SDKの読み込みに失敗しました。');
+        }
+
+        status.textContent = 'LINEに接続しています...';
+
+        await liff.init({
+          liffId: LIFF_ID
+        });
+
+        if (!liff.isInClient()) {
+          status.textContent =
+            'LINEアプリ内から開いてください。';
+          return;
+        }
+
+        try {
+          const profile = await liff.getProfile();
+
+          status.textContent =
+            'LINE接続成功！\n' +
+            'ログイン中：' + profile.displayName +
+            '\n本人確認の準備ができました。';
+
+        } catch (profileError) {
+          status.textContent =
+            'LINE初期化成功！\n' +
+            'プロフィール権限を確認してください。\n' +
+            profileError.message;
+        }
+
+      } catch (error) {
+        status.textContent =
+          'LINE接続エラー：\n' + error.message;
+      }
+    }
+
+    initialize();
+  </script>
+</body>
+</html>
