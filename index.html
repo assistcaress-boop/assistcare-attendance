@@ -18,16 +18,8 @@
       color: #26342b;
     }
 
-    .container {
-      max-width: 440px;
-      margin: 30px auto;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 25px;
-    }
-
+    .container { max-width: 440px; margin: 30px auto; }
+    .header { text-align: center; margin-bottom: 25px; }
     .header h1 { font-size: 25px; }
 
     .card {
@@ -58,14 +50,10 @@
     }
 
     button:disabled { opacity: .5; }
-
     .scan-button { background: #06c755; }
     .entry-button { background: #16834a; }
     .exit-button { background: #2563a8; }
-    .again-button {
-      background: #68756d;
-      font-size: 15px;
-    }
+    .again-button { background: #68756d; font-size: 15px; }
 
     .status {
       margin-top: 20px;
@@ -76,6 +64,7 @@
       line-height: 1.7;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      text-align: left;
     }
 
     .location {
@@ -86,9 +75,7 @@
       font-weight: bold;
     }
 
-    .choice-area, .result-area {
-      margin-top: 20px;
-    }
+    .choice-area, .result-area { margin-top: 20px; }
 
     .footer {
       text-align: center;
@@ -102,122 +89,127 @@
 </head>
 
 <body>
-  <div class="container">
+<div class="container">
 
-    <div class="header">
-      <h1>アシストケア</h1>
-      <p>職員出退室管理システム</p>
-    </div>
+  <div class="header">
+    <h1>アシストケア</h1>
+    <p>職員出退室管理システム</p>
+  </div>
 
-    <div class="card">
+  <div class="card">
+    <div class="icon">📍</div>
+    <h2>出退室管理</h2>
 
-      <div class="icon">📍</div>
-      <h2>出退室管理</h2>
+    <p class="description" id="description">
+      LINEを確認しています。
+    </p>
 
-      <p class="description" id="description">
-        LINEを確認しています。
-      </p>
+    <button id="scanButton"
+      class="scan-button"
+      type="button"
+      disabled
+      onclick="scanQR()">
+      QRコードを読み取る
+    </button>
 
-      <button
-        id="scanButton"
-        class="scan-button"
+    <div id="choiceArea" class="choice-area" hidden>
+      <div class="location">
+        📍 読み取り場所：庄内事務所
+      </div>
+
+      <h3>入室・退室を選んでください</h3>
+
+      <button id="entryButton"
+        class="entry-button"
         type="button"
-        disabled
-        onclick="scanQR()">
-        QRコードを読み取る
+        onclick="selectType('入室')">
+        入室
       </button>
 
-      <div id="choiceArea" class="choice-area" hidden>
-        <div class="location">
-          📍 読み取り場所：庄内事務所
-        </div>
-
-        <h3>入室・退室を選んでください</h3>
-
-        <button
-          class="entry-button"
-          type="button"
-          onclick="selectType('入室')">
-          入室
-        </button>
-
-        <button
-          class="exit-button"
-          type="button"
-          onclick="selectType('退室')">
-          退室
-        </button>
-      </div>
-
-      <div id="resultArea" class="result-area" hidden>
-        <div class="status" id="resultText"></div>
-
-        <button
-          class="again-button"
-          type="button"
-          onclick="resetScreen()">
-          最初に戻る
-        </button>
-      </div>
-
-      <div class="status" id="status">
-        LINE接続を確認しています...
-      </div>
-
+      <button id="exitButton"
+        class="exit-button"
+        type="button"
+        onclick="selectType('退室')">
+        退室
+      </button>
     </div>
 
-    <div class="footer">
-      株式会社アシストケア
+    <div id="resultArea" class="result-area" hidden>
+      <div class="status" id="resultText"></div>
+
+      <button class="again-button"
+        type="button"
+        onclick="resetScreen()">
+        最初に戻る
+      </button>
     </div>
 
+    <div class="status" id="status">
+      LINE接続を確認しています...
+    </div>
   </div>
+
+  <div class="footer">
+    株式会社アシストケア
+  </div>
+
+</div>
 
 <script>
 const LIFF_ID = '2012373373-XMS76enQ';
 
-// 事務所共通QRコードのID
+const GAS_URL =
+  'https://script.google.com/macros/s/AKfycbz5pFWAWGmL0If9IknUwMJqQPPuYFW-pylgH40caL30JTxgNBkcaeTUQFpztttKOuomMQ/exec';
+
 const OFFICE_QR_ID = 'OFFICE-SHONAI';
 
 let currentProfile = null;
 let currentQR = null;
+let processing = false;
+
+function showStatus(message) {
+  document.getElementById('status').textContent = message;
+}
 
 async function initialize() {
-  const status = document.getElementById('status');
   const button = document.getElementById('scanButton');
 
   try {
     await liff.init({ liffId: LIFF_ID });
 
     if (!liff.isInClient()) {
-      status.textContent =
-        'LINEアプリ内から開いてください。';
+      showStatus('LINEアプリ内から開いてください。');
       return;
     }
 
     currentProfile = await liff.getProfile();
 
+    if (!liff.getIDToken()) {
+      throw new Error(
+        '本人確認情報がありません。openid権限を確認してください。'
+      );
+    }
+
     document.getElementById('description').textContent =
       'ログイン中：' + currentProfile.displayName;
 
-    status.textContent =
-      'LINE接続成功！\nQRコードを読み取ってください。';
+    showStatus(
+      'LINE接続成功！\nQRコードを読み取ってください。'
+    );
 
     button.disabled = false;
 
   } catch (error) {
-    status.textContent =
-      'LINE接続エラー：' + error.message;
+    showStatus('LINE接続エラー：' + error.message);
   }
 }
 
 async function scanQR() {
-  const status = document.getElementById('status');
   const button = document.getElementById('scanButton');
 
   try {
     button.disabled = true;
-    status.textContent =
-      'QRコード読み取りを起動しています...';
+    showStatus('QRコードを読み取っています...');
 
     if (typeof liff.scanCodeV2 !== 'function') {
       throw new Error('QR読み取り機能が利用できません。');
@@ -227,9 +219,7 @@ async function scanQR() {
     const qrCode = String(result.value || '').trim();
 
     if (qrCode !== OFFICE_QR_ID) {
-      throw new Error(
-        '未登録のQRコードです。\n読み取った内容：' + qrCode
-      );
+      throw new Error('登録されていないQRコードです。');
     }
 
     currentQR = qrCode;
@@ -237,33 +227,185 @@ async function scanQR() {
     button.hidden = true;
     document.getElementById('choiceArea').hidden = false;
 
-    status.textContent =
-      'QRコード読み取り成功！\n入室・退室を選択してください。';
+    showStatus(
+      'QRコード読み取り成功！\n入室・退室を選択してください。'
+    );
 
   } catch (error) {
-    status.textContent =
-      '読み取りエラー：' + error.message;
+    showStatus('読み取りエラー：' + error.message);
     button.disabled = false;
   }
 }
 
-function selectType(type) {
+function getGPS() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('位置情報に対応していません。'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      error => {
+        const messages = {
+          1: '位置情報の利用が許可されていません。',
+          2: '現在地を取得できませんでした。',
+          3: '位置情報の取得がタイムアウトしました。'
+        };
+
+        reject(new Error(messages[error.code] || error.message));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+      }
+    );
+  });
+}
+
+function createRequestId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+    /[xy]/g,
+    function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 3 | 8);
+      return v.toString(16);
+    }
+  );
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// GASから記録結果をJSONPで取得
+function getSaveStatus(requestId) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('記録結果の確認に失敗しました。'));
+    }, 10000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      script.remove();
+      delete window.assistcareStatusCallback;
+    }
+
+    window.assistcareStatusCallback = function(result) {
+      cleanup();
+      resolve(result);
+    };
+
+    script.onerror = function() {
+      cleanup();
+      reject(new Error('GASとの接続を確認できません。'));
+    };
+
+    script.src =
+      GAS_URL +
+      '?action=status' +
+      '&requestId=' + encodeURIComponent(requestId) +
+      '&callback=window.assistcareStatusCallback' +
+      '&v=' + Date.now();
+
+    document.head.appendChild(script);
+  });
+}
+
+async function waitForSave(requestId) {
+  const deadline = Date.now() + 30000;
+
+  while (Date.now() < deadline) {
+    const result = await getSaveStatus(requestId);
+
+    if (result.state === 'success' ||
+        result.state === 'error') {
+      return result;
+    }
+
+    await sleep(1500);
+  }
+
+  throw new Error(
+    '記録結果を確認できませんでした。管理者に確認してください。'
+  );
+}
+
+async function selectType(type) {
+  if (processing) return;
+
+  processing = true;
+
   document.getElementById('choiceArea').hidden = true;
   document.getElementById('resultArea').hidden = false;
 
-  document.getElementById('resultText').textContent =
-    '選択内容を確認してください。\n\n' +
-    '職員：' + currentProfile.displayName + '\n' +
-    '場所：庄内事務所\n' +
-    '区分：' + type + '\n\n' +
-    '次の工程で日時・GPSを取得し、' +
-    'スプレッドシートへの記録を接続します。';
+  const resultText = document.getElementById('resultText');
 
-  document.getElementById('status').textContent =
-    '入退室区分を選択しました。';
+  try {
+    resultText.textContent =
+      '位置情報を取得しています...\n画面を閉じずにお待ちください。';
+
+    const position = await getGPS();
+
+    const idToken = liff.getIDToken();
+
+    if (!idToken) {
+      throw new Error('LINE本人確認情報を取得できません。');
+    }
+
+    const requestId = createRequestId();
+
+    const form = new URLSearchParams();
+    form.set('requestId', requestId);
+    form.set('idToken', idToken);
+    form.set('qrCode', currentQR);
+    form.set('type', type);
+    form.set('latitude', String(position.coords.latitude));
+    form.set('longitude', String(position.coords.longitude));
+
+    resultText.textContent =
+      '出退室情報を送信しています...\n少しお待ちください。';
+
+    // CORSプリフライトを避け、フォーム形式でPOST
+    try {
+      await fetch(GAS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: form
+      });
+    } catch (sendError) {
+      // 送信結果は下のステータス確認で判定する
+    }
+
+    resultText.textContent =
+      'スプレッドシートへの保存を確認しています...';
+
+    const saved = await waitForSave(requestId);
+
+    if (saved.state === 'success') {
+      resultText.textContent =
+        '✅ 記録が完了しました！\n\n' +
+        saved.message +
+        '\n\nスプレッドシートへの保存が確認できました。';
+
+    } else {
+      throw new Error(saved.message);
+    }
+
+  } catch (error) {
+    resultText.textContent =
+      '❌ 記録できませんでした。\n\n' +
+      error.message +
+      '\n\n記録が完了したか分からない場合は、再操作する前に管理者へ確認してください。';
+  }
 }
 
 function resetScreen() {
+  processing = false;
   currentQR = null;
 
   document.getElementById('resultArea').hidden = true;
@@ -273,8 +415,7 @@ function resetScreen() {
   button.hidden = false;
   button.disabled = false;
 
-  document.getElementById('status').textContent =
-    'もう一度QRコードを読み取ってください。';
+  showStatus('QRコードを読み取ってください。');
 }
 
 initialize();
