@@ -6,8 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>アシストケア 出退室管理</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
   <style>
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
       padding: 25px 16px;
@@ -15,9 +17,19 @@
       background: #f1f5f2;
       color: #26342b;
     }
-    .container { max-width: 440px; margin: 30px auto; }
-    .header { text-align: center; margin-bottom: 25px; }
+
+    .container {
+      max-width: 440px;
+      margin: 30px auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
     .header h1 { font-size: 25px; }
+
     .card {
       background: white;
       border-radius: 18px;
@@ -25,24 +37,36 @@
       box-shadow: 0 4px 18px #0000000c;
       text-align: center;
     }
+
     .icon { font-size: 48px; }
+
     .description {
       font-size: 14px;
       color: #718078;
       line-height: 1.7;
     }
+
     button {
       width: 100%;
       padding: 18px;
-      margin-top: 25px;
+      margin-top: 15px;
       border: none;
       border-radius: 12px;
-      background: #06c755;
       color: white;
       font-size: 17px;
       font-weight: bold;
     }
+
     button:disabled { opacity: .5; }
+
+    .scan-button { background: #06c755; }
+    .entry-button { background: #16834a; }
+    .exit-button { background: #2563a8; }
+    .again-button {
+      background: #68756d;
+      font-size: 15px;
+    }
+
     .status {
       margin-top: 20px;
       padding: 15px;
@@ -53,22 +77,40 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+
+    .location {
+      margin: 15px 0;
+      padding: 15px;
+      background: #edf7ef;
+      border-radius: 12px;
+      font-weight: bold;
+    }
+
+    .choice-area, .result-area {
+      margin-top: 20px;
+    }
+
     .footer {
       text-align: center;
       color: #8a958e;
       font-size: 12px;
       margin-top: 22px;
     }
+
+    [hidden] { display: none !important; }
   </style>
 </head>
+
 <body>
   <div class="container">
+
     <div class="header">
       <h1>アシストケア</h1>
       <p>職員出退室管理システム</p>
     </div>
 
     <div class="card">
+
       <div class="icon">📍</div>
       <h2>出退室管理</h2>
 
@@ -76,22 +118,68 @@
         LINEを確認しています。
       </p>
 
-      <button id="scanButton" type="button" disabled onclick="scanQR()">
+      <button
+        id="scanButton"
+        class="scan-button"
+        type="button"
+        disabled
+        onclick="scanQR()">
         QRコードを読み取る
       </button>
+
+      <div id="choiceArea" class="choice-area" hidden>
+        <div class="location">
+          📍 読み取り場所：庄内事務所
+        </div>
+
+        <h3>入室・退室を選んでください</h3>
+
+        <button
+          class="entry-button"
+          type="button"
+          onclick="selectType('入室')">
+          入室
+        </button>
+
+        <button
+          class="exit-button"
+          type="button"
+          onclick="selectType('退室')">
+          退室
+        </button>
+      </div>
+
+      <div id="resultArea" class="result-area" hidden>
+        <div class="status" id="resultText"></div>
+
+        <button
+          class="again-button"
+          type="button"
+          onclick="resetScreen()">
+          最初に戻る
+        </button>
+      </div>
 
       <div class="status" id="status">
         LINE接続を確認しています...
       </div>
+
     </div>
 
     <div class="footer">
       株式会社アシストケア
     </div>
+
   </div>
 
 <script>
 const LIFF_ID = '2012373373-XMS76enQ';
+
+// 事務所共通QRコードのID
+const OFFICE_QR_ID = 'OFFICE-SHONAI';
+
+let currentProfile = null;
+let currentQR = null;
 
 async function initialize() {
   const status = document.getElementById('status');
@@ -101,17 +189,18 @@ async function initialize() {
     await liff.init({ liffId: LIFF_ID });
 
     if (!liff.isInClient()) {
-      status.textContent = 'LINEアプリ内から開いてください。';
+      status.textContent =
+        'LINEアプリ内から開いてください。';
       return;
     }
 
-    const profile = await liff.getProfile();
+    currentProfile = await liff.getProfile();
 
     document.getElementById('description').textContent =
-      'ログイン中：' + profile.displayName;
+      'ログイン中：' + currentProfile.displayName;
 
     status.textContent =
-      'LINE接続成功！\nQRコードを読み取る準備ができました。';
+      'LINE接続成功！\nQRコードを読み取ってください。';
 
     button.disabled = false;
 
@@ -127,32 +216,65 @@ async function scanQR() {
 
   try {
     button.disabled = true;
-    status.textContent = 'QRコード読み取りを起動しています...';
+    status.textContent =
+      'QRコード読み取りを起動しています...';
 
     if (typeof liff.scanCodeV2 !== 'function') {
-      throw new Error(
-        'QR読み取り機能が利用できません。LINE DevelopersのScan QR設定を確認してください。'
-      );
+      throw new Error('QR読み取り機能が利用できません。');
     }
 
     const result = await liff.scanCodeV2();
-    const qrCode = result.value.trim();
+    const qrCode = String(result.value || '').trim();
 
-    if (!qrCode) {
-      throw new Error('QRコードを読み取れませんでした。');
+    if (qrCode !== OFFICE_QR_ID) {
+      throw new Error(
+        '未登録のQRコードです。\n読み取った内容：' + qrCode
+      );
     }
 
+    currentQR = qrCode;
+
+    button.hidden = true;
+    document.getElementById('choiceArea').hidden = false;
+
     status.textContent =
-      'QRコード読み取り成功！\n\n' +
-      '読み取った内容：\n' + qrCode +
-      '\n\n次は出退室記録を接続します。';
+      'QRコード読み取り成功！\n入室・退室を選択してください。';
 
   } catch (error) {
     status.textContent =
       '読み取りエラー：' + error.message;
-  } finally {
     button.disabled = false;
   }
+}
+
+function selectType(type) {
+  document.getElementById('choiceArea').hidden = true;
+  document.getElementById('resultArea').hidden = false;
+
+  document.getElementById('resultText').textContent =
+    '選択内容を確認してください。\n\n' +
+    '職員：' + currentProfile.displayName + '\n' +
+    '場所：庄内事務所\n' +
+    '区分：' + type + '\n\n' +
+    '次の工程で日時・GPSを取得し、' +
+    'スプレッドシートへの記録を接続します。';
+
+  document.getElementById('status').textContent =
+    '入退室区分を選択しました。';
+}
+
+function resetScreen() {
+  currentQR = null;
+
+  document.getElementById('resultArea').hidden = true;
+  document.getElementById('choiceArea').hidden = true;
+
+  const button = document.getElementById('scanButton');
+  button.hidden = false;
+  button.disabled = false;
+
+  document.getElementById('status').textContent =
+    'もう一度QRコードを読み取ってください。';
 }
 
 initialize();
