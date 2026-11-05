@@ -193,9 +193,25 @@ async function initialize() {
     document.getElementById('description').textContent =
       'ログイン中：' + currentProfile.displayName;
 
-    showStatus(
-      'LINE接続成功！\nQRコードを読み取ってください。'
-    );
+const context = liff.getContext();
+
+const permissionStatus =
+  await liff.permission.query('chat_message.write');
+
+const grantedScopes =
+  await liff.permission.getGrantedAll();
+
+const hasScope =
+  Array.isArray(context.scope) &&
+  context.scope.includes('chat_message.write');
+
+showStatus(
+  'LINE接続成功！\n' +
+  'LINE起動元：' + context.type + '\n' +
+  '送信権限設定：' + (hasScope ? 'あり' : 'なし') + '\n' +
+  '送信権限状態：' + permissionStatus.state + '\n' +
+  '同意済み権限：' + grantedScopes.join(', ')
+);
 
     button.disabled = false;
 
