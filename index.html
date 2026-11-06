@@ -49,21 +49,31 @@
 
     button {
       width: 100%;
-      padding: 18px;
+      padding: 17px;
       margin-top: 15px;
       border: none;
       border-radius: 12px;
       color: white;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: bold;
     }
 
     button:disabled { opacity: .5; }
 
+    input {
+      width: 100%;
+      padding: 15px;
+      margin-top: 12px;
+      border: 1px solid #ccd5cf;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+
     .scan-button { background: #06c755; }
     .entry-button { background: #16834a; }
     .exit-button { background: #2563a8; }
-    .again-button { background: #68756d; font-size: 15px; }
+    .again-button { background: #68756d; }
+    .register-button { background: #16834a; }
 
     .status {
       margin-top: 20px;
@@ -87,6 +97,25 @@
 
     .choice-area, .result-area { margin-top: 20px; }
 
+    .registration-area {
+      margin-top: 20px;
+      padding: 18px;
+      background: #edf7ef;
+      border-radius: 12px;
+      text-align: left;
+    }
+
+    .registration-area h3 {
+      text-align: center;
+      margin-top: 0;
+    }
+
+    .registration-area p {
+      font-size: 13px;
+      line-height: 1.7;
+      color: #53615a;
+    }
+
     .footer {
       text-align: center;
       color: #8a958e;
@@ -99,6 +128,7 @@
 </head>
 
 <body>
+
 <div class="container">
 
   <div class="header">
@@ -115,15 +145,46 @@
       LINEを確認しています。
     </p>
 
+    <!-- 初回職員登録 -->
+    <div id="registrationArea"
+         class="registration-area"
+         hidden>
+
+      <h3>職員の初回登録</h3>
+
+      <p>
+        初めて利用する場合は、会社から配布された職員登録コードを入力してください。
+        登録後は次回からコード入力は不要です。
+      </p>
+
+      <input
+        type="password"
+        id="registrationCode"
+        placeholder="職員登録コード"
+        autocomplete="off">
+
+      <button
+        id="registerButton"
+        class="register-button"
+        type="button"
+        onclick="registerStaff()">
+        職員登録する
+      </button>
+
+    </div>
+
+    <!-- QR読み取り -->
     <button
       id="scanButton"
       class="scan-button"
       type="button"
       disabled
+      hidden
       onclick="scanQR()">
       QRコードを読み取る
     </button>
 
+    <!-- 入室・退室 -->
     <div id="choiceArea" class="choice-area" hidden>
 
       <div class="location" id="locationName">
@@ -148,7 +209,9 @@
 
     </div>
 
+    <!-- 結果 -->
     <div id="resultArea" class="result-area" hidden>
+
       <div class="status" id="resultText"></div>
 
       <button
@@ -157,6 +220,7 @@
         onclick="resetScreen()">
         最初に戻る
       </button>
+
     </div>
 
     <div class="status" id="status">
@@ -186,6 +250,7 @@ let currentProfile = null;
 let currentQR = null;
 let currentLocation = null;
 let processing = false;
+let staffAuthorized = false;
 
 
 /**************************************************
@@ -201,61 +266,298 @@ function sleep(ms) {
 }
 
 function createRequestId() {
+
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
     /[xy]/g,
     function(c) {
+
       const r = Math.random() * 16 | 0;
+
       const v = c === 'x' ? r : (r & 3 | 8);
+
       return v.toString(16);
+
     }
   );
+
 }
 
 
 /**************************************************
- * LINE初期設定
+ * GAS処理結果取得
+ **************************************************/
+
+function getRequestStatus(requestId) {
+
+  return new Promise((resolve, reject) => {
+
+    const script = document.createElement('script');
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('GASの処理結果を取得できません。'));
+    }, 10000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      script.remove();
+      delete window.assistcareStatusCallback;
+    }
+
+    window.assistcareStatusCallback = function(result) {
+      cleanup();
+      resolve(result);
+    };
+
+    script.onerror = function() {
+      cleanup();
+      reject(new Error('GASとの通信に失敗しました。'));
+    };
+
+    script.src =
+      GAS_URL +
+      '?action=status' +
+      '&requestId=' + encodeURIComponent(requestId) +
+      '&callback=window.assistcareStatusCallback' +
+      '&v=' + Date.now();
+
+    document.head.appendChild(script);
+
+  });
+
+}
+
+
+async function waitForRequest(requestId) {
+
+  const deadline = Date.now() + 30000;
+
+  while (Date.now() < deadline) {
+
+    const result = await getRequestStatus(requestId);
+
+    if (result.state === 'success') {
+      return result.data;
+    }
+
+    if (result.state === 'error') {
+      throw new Error(result.message);
+    }
+
+    await sleep(1200);
+
+  }
+
+  throw new Error(
+    '処理結果を確認できませんでした。再操作前に管理者へ確認してください。'
+  );
+
+}
+
+
+/**************************************************
+ * GASへ安全にPOST
+ **************************************************/
+
+async function callGas(action, values) {
+
+  const requestId = createRequestId();
+
+  const form = new URLSearchParams();
+
+  form.set('action', action);
+  form.set('requestId', requestId);
+
+  Object.keys(values).forEach(function(key) {
+    form.set(key, String(values[key] ?? ''));
+  });
+
+  try {
+
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: form
+    });
+
+  } catch (error) {
+
+    // 送信結果はサーバー側の処理状況で確認する
+
+  }
+
+  return await waitForRequest(requestId);
+
+}
+
+
+/**************************************************
+ * 職員画面を有効にする
+ **************************************************/
+
+function activateStaff(staffName) {
+
+  staffAuthorized = true;
+
+  document.getElementById('registrationArea').hidden = true;
+
+  const button = document.getElementById('scanButton');
+
+  button.hidden = false;
+  button.disabled = false;
+
+  document.getElementById('description').textContent =
+    '登録済み職員：' + staffName;
+
+  showStatus(
+    '✅ 職員登録確認済み\nQRコードを読み取ってください。'
+  );
+
+}
+
+
+/**************************************************
+ * LINE初期設定・職員登録状況確認
  **************************************************/
 
 async function initialize() {
-
-  const button = document.getElementById('scanButton');
 
   try {
 
     showStatus('LINEに接続しています...');
 
-    await liff.init({ liffId: LIFF_ID });
+    await liff.init({
+      liffId: LIFF_ID
+    });
 
     if (!liff.isInClient()) {
-      showStatus('LINEアプリ内から開いてください。');
-      return;
+      throw new Error('LINEアプリ内から開いてください。');
     }
 
     currentProfile = await liff.getProfile();
 
-    if (!liff.getIDToken()) {
-      throw new Error('LINE本人確認情報がありません。');
+    const idToken = liff.getIDToken();
+
+    if (!idToken) {
+      throw new Error(
+        '本人確認情報を取得できません。openid権限を確認してください。'
+      );
     }
 
     document.getElementById('description').textContent =
       'ログイン中：' + currentProfile.displayName;
 
-    showStatus(
-      'LINE接続成功！\nQRコードを読み取ってください。'
+    showStatus('職員登録状況を確認しています...');
+
+    const result = await callGas(
+      'checkStaff',
+      {
+        idToken: idToken,
+        displayName: currentProfile.displayName
+      }
     );
 
-    button.disabled = false;
+    if (result.status === 'active') {
+
+      // 既存職員は登録コード不要
+      activateStaff(
+        result.staffName || currentProfile.displayName
+      );
+
+      return;
+    }
+
+    if (result.status === 'unregistered') {
+
+      document.getElementById('registrationArea').hidden = false;
+
+      showStatus(
+        '初回登録が必要です。\n会社から配布された登録コードを入力してください。'
+      );
+
+      return;
+    }
+
+    if (result.status === 'disabled') {
+
+      throw new Error(
+        'このアカウントは利用停止中です。管理者に確認してください。'
+      );
+
+    }
+
+    throw new Error('職員登録状況を確認できませんでした。');
 
   } catch (error) {
 
-    showStatus('LINE接続エラー：' + error.message);
+    showStatus('利用確認エラー：' + error.message);
 
   }
+
 }
 
 
 /**************************************************
- * 訪問先QR情報をGASから取得
+ * 初回職員登録
+ **************************************************/
+
+async function registerStaff() {
+
+  const button =
+    document.getElementById('registerButton');
+
+  const code =
+    document.getElementById('registrationCode').value.trim();
+
+  if (!code) {
+    showStatus('職員登録コードを入力してください。');
+    return;
+  }
+
+  button.disabled = true;
+
+  showStatus('職員登録を確認しています...');
+
+  try {
+
+    const result = await callGas(
+      'registerStaff',
+      {
+        idToken: liff.getIDToken(),
+        displayName: currentProfile.displayName,
+        registrationCode: code
+      }
+    );
+
+    document.getElementById('registrationCode').value = '';
+
+    activateStaff(
+      result.staffName || currentProfile.displayName
+    );
+
+    showStatus(
+      '✅ 職員登録が完了しました！\n' +
+      '次回から登録コードの入力は不要です。\n' +
+      'QRコードを読み取ってください。'
+    );
+
+  } catch (error) {
+
+    showStatus(
+      '職員登録エラー：' + error.message
+    );
+
+  } finally {
+
+    button.disabled = false;
+
+  }
+
+}
+
+
+/**************************************************
+ * 訪問先QR情報取得
  **************************************************/
 
 function getQrInfo(qrCode) {
@@ -282,7 +584,7 @@ function getQrInfo(qrCode) {
 
     script.onerror = function() {
       cleanup();
-      reject(new Error('訪問先情報を取得できません。GASとの接続を確認してください。'));
+      reject(new Error('訪問先情報を取得できません。'));
     };
 
     script.src =
@@ -300,12 +602,17 @@ function getQrInfo(qrCode) {
 
 
 /**************************************************
- * QRコード読み取り
+ * QR読み取り
  **************************************************/
 
 async function scanQR() {
 
   const button = document.getElementById('scanButton');
+
+  if (!staffAuthorized) {
+    showStatus('職員登録が完了していません。');
+    return;
+  }
 
   try {
 
@@ -327,21 +634,19 @@ async function scanQR() {
 
     showStatus('訪問先情報を確認しています...');
 
-    // GASのQRマスタと照合
     const qrInfo = await getQrInfo(qrCode);
 
     if (!qrInfo || qrInfo.valid !== true) {
       throw new Error(
         qrInfo && qrInfo.message
           ? qrInfo.message
-          : '登録されていないQRコードです。'
+          : '未登録または利用停止中のQRコードです。'
       );
     }
 
     currentQR = qrInfo.qrCode;
     currentLocation = qrInfo.locationName;
 
-    // 読み取った訪問先名を表示
     document.getElementById('locationName').textContent =
       '📍 訪問先：' + currentLocation;
 
@@ -357,7 +662,9 @@ async function scanQR() {
 
   } catch (error) {
 
-    showStatus('読み取りエラー：' + error.message);
+    showStatus(
+      'QR読み取りエラー：' + error.message
+    );
 
     button.disabled = false;
 
@@ -411,126 +718,30 @@ function getGPS() {
 
 
 /**************************************************
- * GAS記録状況確認
- **************************************************/
-
-function getSaveStatus(requestId) {
-
-  return new Promise((resolve, reject) => {
-
-    const script = document.createElement('script');
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('記録結果の確認に失敗しました。'));
-    }, 10000);
-
-    function cleanup() {
-      clearTimeout(timer);
-      script.remove();
-      delete window.assistcareStatusCallback;
-    }
-
-    window.assistcareStatusCallback = function(result) {
-      cleanup();
-      resolve(result);
-    };
-
-    script.onerror = function() {
-      cleanup();
-      reject(new Error('GASとの接続を確認できません。'));
-    };
-
-    script.src =
-      GAS_URL +
-      '?action=status' +
-      '&requestId=' + encodeURIComponent(requestId) +
-      '&callback=window.assistcareStatusCallback' +
-      '&v=' + Date.now();
-
-    document.head.appendChild(script);
-
-  });
-
-}
-
-
-async function waitForSave(requestId) {
-
-  const deadline = Date.now() + 30000;
-
-  while (Date.now() < deadline) {
-
-    const result = await getSaveStatus(requestId);
-
-    if (
-      result.state === 'success' ||
-      result.state === 'error'
-    ) {
-      return result;
-    }
-
-    await sleep(1500);
-
-  }
-
-  throw new Error(
-    '記録結果を確認できませんでした。管理者に確認してください。'
-  );
-
-}
-
-
-/**************************************************
- * GASへ出退室情報を送信
+ * 出退室記録をGASに送信
  **************************************************/
 
 async function sendAttendance(type, position) {
 
-  const idToken = liff.getIDToken();
+  const result = await callGas(
+    'attendance',
+    {
+      idToken: liff.getIDToken(),
+      displayName: currentProfile.displayName,
+      qrCode: currentQR,
+      type: type,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude
+    }
+  );
 
-  if (!idToken) {
-    throw new Error('LINE本人確認情報を取得できません。');
-  }
-
-  const requestId = createRequestId();
-
-  const form = new URLSearchParams();
-
-  form.set('requestId', requestId);
-  form.set('idToken', idToken);
-  form.set('qrCode', currentQR);
-  form.set('type', type);
-  form.set('latitude', String(position.coords.latitude));
-  form.set('longitude', String(position.coords.longitude));
-
-  showStatus('スプレッドシートへ送信しています...');
-
-  try {
-
-    await fetch(GAS_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: form
-    });
-
-  } catch (sendError) {
-    // 下の保存状況確認で判定
-  }
-
-  const saved = await waitForSave(requestId);
-
-  if (saved.state !== 'success') {
-    throw new Error(saved.message || '記録に失敗しました。');
-  }
-
-  return saved.message;
+  return result.message;
 
 }
 
 
 /**************************************************
- * LINEトークへ打刻通知
+ * LINEトークへの通知
  **************************************************/
 
 async function sendLineNotification(message) {
@@ -543,7 +754,7 @@ async function sendLineNotification(message) {
 
   if (!context || context.type !== 'utou') {
     throw new Error(
-      '会社のLINE公式アカウントとの1対1トークから開き直してください。'
+      '会社の公式アカウントとの1対1トークから開き直してください。'
     );
   }
 
@@ -552,7 +763,7 @@ async function sendLineNotification(message) {
 
   if (permission.state !== 'granted') {
     throw new Error(
-      'LINEメッセージ送信の許可が確認できません。'
+      'LINEメッセージ送信への許可が確認できません。'
     );
   }
 
@@ -572,15 +783,16 @@ async function sendLineNotification(message) {
 
 async function selectType(type) {
 
-  if (processing) return;
+  if (processing || !staffAuthorized) return;
 
   processing = true;
 
-  const resultArea = document.getElementById('resultArea');
-  const resultText = document.getElementById('resultText');
-
   document.getElementById('choiceArea').hidden = true;
-  resultArea.hidden = false;
+
+  document.getElementById('resultArea').hidden = false;
+
+  const resultText =
+    document.getElementById('resultText');
 
   try {
 
@@ -589,7 +801,6 @@ async function selectType(type) {
 
     const position = await getGPS();
 
-    // GASへ保存
     const savedMessage =
       await sendAttendance(type, position);
 
@@ -598,7 +809,6 @@ async function selectType(type) {
       savedMessage +
       '\n\nLINE通知を送信しています...';
 
-    // LINEトークへ送信
     try {
 
       await sendLineNotification(savedMessage);
@@ -631,7 +841,7 @@ async function selectType(type) {
 
 
 /**************************************************
- * 最初の画面に戻る
+ * 最初に戻る
  **************************************************/
 
 function resetScreen() {
@@ -642,9 +852,11 @@ function resetScreen() {
   currentLocation = null;
 
   document.getElementById('resultArea').hidden = true;
+
   document.getElementById('choiceArea').hidden = true;
 
-  const button = document.getElementById('scanButton');
+  const button =
+    document.getElementById('scanButton');
 
   button.hidden = false;
   button.disabled = false;
